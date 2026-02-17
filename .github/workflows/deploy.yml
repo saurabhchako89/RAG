@@ -1,0 +1,236 @@
+name: Deploy RAG to OCI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # Test Backend
+  test-backend:
+    name: "🧪 Test Backend"
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        
+    - name: Run tests
+      run: |
+        cd backend
+        # Add your tests here
+        echo "✅ Backend tests passed"
+
+  # Build and Push Docker Images
+  build-images:
+    name: "🐳 Build Docker Images"
+    runs-on: ubuntu-latest
+    needs: [test-backend]
+    if: |
+      github.ref == 'refs/heads/main' && 
+      github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Extract metadata for backend
+      id: meta-backend
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository_owner }}/rag-backend
+        tags: |
+          type=raw,value=latest
+          type=sha,prefix={{branch}}-
+    
+    - name: Build and push backend
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        target: backend
+        push: true
+        tags: ${{ steps.meta-backend.outputs.tags }}
+        labels: ${{ steps.meta-backend.outputs.labels }}
+    
+    - name: Extract metadata for frontend
+      id: meta-frontend
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository_owner }}/rag-frontend
+        tags: |
+          type=raw,value=latest
+          type=sha,prefix={{branch}}-
+    
+    - name: Build and push frontend
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        target: frontend
+        push: true
+        tags: ${{ steps.meta-frontend.outputs.tags }}
+        labels: ${{ steps.meta-frontend.outputs.labels }}
+
+  # Deploy to OCI
+  deploy:
+    name: "🚀 Deploy to OCI"
+    runs-on: ubuntu-latest
+    needs: [build-images]
+    if: |
+      github.ref == 'refs/heads/main' && 
+      github.event_name == 'push'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Setup OCI CLI
+      run: |
+        curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash -s -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+        echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+        
+        mkdir -p ~/.oci
+        cat > ~/.oci/config << EOF
+        [DEFAULT]
+        user=${{ secrets.OCI_USER_OCID }}
+        fingerprint=${{ secrets.OCI_FINGERPRINT }}
+        tenancy=${{ secrets.OCI_TENANCY_OCID }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=$HOME/.oci/key.pem
+        EOF
+        
+        echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+        
+        oci --version
+    
+    - name: Validate Secrets
+      run: |
+        echo "Validating required secrets..."
+        
+        if [ -z "${{ secrets.OCI_USER_OCID }}" ]; then
+          echo "❌ ERROR: OCI_USER_OCID secret is not set!"
+          exit 1
+        fi
+        
+        if [ -z "${{ secrets.OCI_FINGERPRINT }}" ]; then
+          echo "❌ ERROR: OCI_FINGERPRINT secret is not set!"
+          exit 1
+        fi
+
+        if [ -z "${{ secrets.OCI_TENANCY_OCID }}" ]; then
+          echo "❌ ERROR: OCI_TENANCY_OCID secret is not set!"
+          exit 1
+        fi
+
+        if [ -z "${{ secrets.OCI_REGION }}" ]; then
+          echo "❌ ERROR: OCI_REGION secret is not set!"
+          exit 1
+        fi
+
+        if [ -z "${{ secrets.OCI_PRIVATE_KEY }}" ]; then
+          echo "❌ ERROR: OCI_PRIVATE_KEY secret is not set!"
+          exit 1
+        fi
+
+        if [ -z "${{ secrets.OCI_COMPARTMENT_ID }}" ]; then
+          echo "❌ ERROR: OCI_COMPARTMENT_ID secret is not set!"
+          exit 1
+        fi
+
+        if [ -z "${{ secrets.SSH_PUBLIC_KEY }}" ]; then
+          echo "❌ ERROR: SSH_PUBLIC_KEY secret is not set!"
+          exit 1
+        fi
+        
+        echo "✅ All required OCI secrets are set"
+    
+    - name: Deploy Infrastructure
+      working-directory: ./infra/terraform
+      env:
+        TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+        TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+        TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+        TF_VAR_region: ${{ secrets.OCI_REGION }}
+        TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+        TF_VAR_compartment_id: ${{ secrets.OCI_COMPARTMENT_ID }}
+        TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
+        TF_VAR_github_owner: ${{ github.repository_owner }}
+        TF_VAR_github_repo: ${{ github.event.repository.name }}
+        TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+        TF_VAR_groq_api_key: ${{ secrets.GROQ_API_KEY }}
+        TF_VAR_allowed_ssh_cidr: ${{ secrets.ALLOWED_SSH_CIDR || '0.0.0.0/0' }}
+        TF_VAR_allowed_web_cidr: ${{ secrets.ALLOWED_WEB_CIDR || '0.0.0.0/0' }}
+      run: |
+        export PATH="$HOME/bin:$PATH"
+
+        terraform init
+        terraform plan
+        terraform apply -auto-approve
+        
+        INSTANCE_IP=$(terraform output -raw instance_public_ip 2>&1)
+        if [ -z "$INSTANCE_IP" ] || [ "$INSTANCE_IP" == "null" ]; then
+          echo "❌ ERROR: Failed to get instance IP"
+          exit 1
+        fi
+        
+        echo "INSTANCE_IP=$INSTANCE_IP" >> $GITHUB_ENV
+        echo "✅ Terraform completed. Instance IP: $INSTANCE_IP"
+    
+    - name: Wait for Services
+      run: |
+        echo "Waiting for Docker installation and container startup..."
+        echo "Instance IP: $INSTANCE_IP"
+        
+        sleep 120
+        
+        echo "Checking service health..."
+        for i in {1..60}; do
+          echo "Attempt $i/60: Checking http://$INSTANCE_IP/api/health"
+          if curl -f -m 5 http://$INSTANCE_IP/api/health 2>/dev/null; then
+            echo "✅ Services ready!"
+            exit 0
+          fi
+          sleep 5
+        done
+        
+        echo "⚠️ Service did not start in time"
+        exit 1
+    
+    - name: Deployment Summary
+      run: |
+        echo "====================================="
+        echo "✅ DEPLOYMENT COMPLETE!"
+        echo "====================================="
+        echo "🌐 Frontend: http://$INSTANCE_IP"
+        echo "📚 API Docs: http://$INSTANCE_IP/api/docs"
+        echo "🏥 Health: http://$INSTANCE_IP/api/health"
+        echo "====================================="

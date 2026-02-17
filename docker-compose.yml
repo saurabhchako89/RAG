@@ -1,0 +1,12 @@
+version: '3.9'
+
+services:
+  rag-backend:
+    extends:
+      file: ./infra/docker/docker-compose.dev.yml
+      service: rag-backend
+
+  rag-frontend:
+    extends:
+      file: ./infra/docker/docker-compose.dev.yml
+      service: rag-frontend

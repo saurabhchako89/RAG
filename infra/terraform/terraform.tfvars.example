@@ -1,0 +1,18 @@
+user_ocid        = "ocid1.user.oc1..example"
+fingerprint      = "12:34:56:78:9a:bc"
+tenancy_ocid     = "ocid1.tenancy.oc1..example"
+region           = "us-ashburn-1"
+private_key      = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+compartment_id   = "ocid1.compartment.oc1..example"
+ssh_public_key   = "ssh-ed25519 AAAA..."
+github_owner     = "your-github-username"
+github_repo      = "your-repo-name"
+github_token     = "ghp_exampletoken"
+openai_api_key   = ""
+
+groq_api_key     = "gsk_example"
+allowed_ssh_cidr = "203.0.113.10/32"
+allowed_web_cidr = "0.0.0.0/0"
+instance_shape   = "VM.Standard.E2.1.Micro"
+boot_volume_size = 50
+deployment_trigger = 1

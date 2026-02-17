@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  rag-backend:
+    image: ghcr.io/${GITHUB_OWNER:-yourusername}/rag-backend:latest
+    container_name: rag-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+    volumes:
+      - rag-uploads:/app/uploads
+      - rag-chromadb:/app/data/chromadb
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  rag-frontend:
+    image: ghcr.io/${GITHUB_OWNER:-yourusername}/rag-frontend:latest
+    container_name: rag-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      rag-backend:
+        condition: service_healthy
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  rag-network:
+    driver: bridge
+
+volumes:
+  rag-uploads:
+  rag-chromadb:
