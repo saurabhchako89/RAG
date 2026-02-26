@@ -12,11 +12,12 @@ terraform {
 }
 
 provider "oci" {
-  region       = var.region
-  user_ocid    = var.user_ocid
-  fingerprint  = var.fingerprint
-  private_key  = var.private_key
-  tenancy_ocid = var.tenancy_ocid
+  region              = var.region
+  user_ocid           = var.user_ocid
+  fingerprint         = var.fingerprint
+  private_key         = var.private_key
+  tenancy_ocid        = var.tenancy_ocid
+  retry_duration_seconds = 60
 }
 
 # Get availability domain

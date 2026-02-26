@@ -1,0 +1,9 @@
+.git
+.github
+infra/docker/dev-data
+infra/scripts/deploy-shared.sh
+__pycache__
+*.pyc
+*.log
+uploads
+data/chromadb
