@@ -68,8 +68,10 @@ OCI VM (Docker engine, git clone via cloud-init)
 ## ⚙️ Configuration Matrix
 | Purpose | Variable | Notes |
 |---------|----------|-------|
-| LLM (hosted) | `GROQ_API_KEY` | Pointing to `https://api.groq.com/openai/v1`, default model `llama-3.1-8b-instant` |
+| LLM (Groq) | `GROQ_API_KEY`, `GROQ_MODEL` | Uses Groq's OpenAI-compatible endpoint (default `llama-3.1-8b-instant`) |
+| LLM (DeepSeek) | `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_BASE` | Defaults to `deepseek-chat` via `https://api.deepseek.com` |
 | LLM (OpenAI) | `OPENAI_API_KEY`, `OPENAI_CHAT_MODEL` | e.g. `gpt-4o-mini` |
+| LLM (Gemini) | `GEMINI_API_KEY`, `GEMINI_MODEL` | Defaults to `gemini-1.5-flash` |
 | Embeddings (OpenAI) | `OPENAI_EMBED_MODEL` | default `text-embedding-3-small` |
 | Embeddings (local) | `EMBEDDING_PROVIDER=huggingface`, `HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2` | removes OpenAI dependency |
 | Security | `ALLOWED_SSH_CIDR`, `ALLOWED_WEB_CIDR` | Restrict ingress for Terraform security lists |
@@ -78,6 +80,8 @@ OCI VM (Docker engine, git clone via cloud-init)
 
 Store secrets in GitHub Actions → Settings → Secrets. Local dev can use a `.env` next to `docker-compose.dev.yml`.
 
+> At least one of `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` must be present for the backend to serve queries.
+
 ---
 
 ## 🚀 Getting Started
@@ -85,7 +89,9 @@ Store secrets in GitHub Actions → Settings → Secrets. Local dev can use a `.
 ```bash
 # Environment (pick at least one key)
 export GROQ_API_KEY=gsk_...
+# or: export DEEPSEEK_API_KEY=dsk_...
 # or: export OPENAI_API_KEY=sk-...
+# or: export GEMINI_API_KEY=AIza...
 # optional offline embeddings
 export EMBEDDING_PROVIDER=huggingface
 

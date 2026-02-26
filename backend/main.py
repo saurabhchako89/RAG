@@ -21,6 +21,7 @@ from langchain.schema import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -90,13 +91,15 @@ def get_vector_store() -> Chroma:
     return _vector_store
 
 
-def get_llm(model: Optional[str] = None, temperature: float = 0.0) -> ChatOpenAI:
+def get_llm(model: Optional[str] = None, temperature: float = 0.0):
     requested_model = model
     if requested_model and requested_model.lower() == "auto":
         requested_model = None
 
     groq_key = os.getenv("GROQ_API_KEY")
+    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
     openai_key = os.getenv("OPENAI_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
 
     if groq_key:
         resolved_model = requested_model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
@@ -107,6 +110,15 @@ def get_llm(model: Optional[str] = None, temperature: float = 0.0) -> ChatOpenAI
             openai_api_base=os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
         )
 
+    if deepseek_key:
+        resolved_model = requested_model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        return ChatOpenAI(
+            model=resolved_model,
+            temperature=temperature,
+            openai_api_key=deepseek_key,
+            openai_api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+        )
+
     if openai_key:
         resolved_model = requested_model or os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
         return ChatOpenAI(
@@ -115,7 +127,16 @@ def get_llm(model: Optional[str] = None, temperature: float = 0.0) -> ChatOpenAI
             openai_api_key=openai_key
         )
 
-    raise RuntimeError("Set GROQ_API_KEY or OPENAI_API_KEY to query the knowledge base.")
+    if gemini_key:
+        resolved_model = requested_model or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        return ChatGoogleGenerativeAI(
+            model=resolved_model,
+            temperature=temperature,
+            api_key=gemini_key,
+            convert_system_message_to_human=True,
+        )
+
+    raise RuntimeError("Set one of GROQ_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY to query the knowledge base.")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

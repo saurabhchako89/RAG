@@ -202,11 +202,13 @@ resource "oci_core_instance" "rag_instance" {
     ssh_authorized_keys = var.ssh_public_key
     deployment_trigger  = var.deployment_trigger
     user_data = base64encode(templatefile("${path.module}/../scripts/setup-docker.sh", {
-      GITHUB_OWNER   = var.github_owner
-      GITHUB_TOKEN   = var.github_token
-      GITHUB_REPO    = var.github_repo
-      OPENAI_API_KEY = var.openai_api_key
-      GROQ_API_KEY   = var.groq_api_key
+      GITHUB_OWNER    = var.github_owner
+      GITHUB_TOKEN    = var.github_token
+      GITHUB_REPO     = var.github_repo
+      OPENAI_API_KEY  = var.openai_api_key
+      GROQ_API_KEY    = var.groq_api_key
+      GEMINI_API_KEY  = var.gemini_api_key
+      DEEPSEEK_API_KEY = var.deepseek_api_key
     }))
   }
 

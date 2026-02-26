@@ -62,6 +62,18 @@ variable "groq_api_key" {
   default     = ""
 }
 
+variable "gemini_api_key" {
+  description = "Optional Google Gemini API key"
+  type        = string
+  default     = ""
+}
+
+variable "deepseek_api_key" {
+  description = "Optional DeepSeek API key"
+  type        = string
+  default     = ""
+}
+
 variable "allowed_ssh_cidr" {
   description = "CIDR range allowed to SSH"
   type        = string
