@@ -74,9 +74,9 @@ OCI VM (Docker engine, git clone via cloud-init)
 | LLM (Gemini) | `GEMINI_API_KEY`, `GEMINI_MODEL` | Defaults to `gemini-1.5-flash` |
 | Embeddings (OpenAI) | `OPENAI_EMBED_MODEL` | default `text-embedding-3-small` |
 | Embeddings (local) | `EMBEDDING_PROVIDER=huggingface`, `HF_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2` | removes OpenAI dependency |
-| Security | `ALLOWED_SSH_CIDR`, `ALLOWED_WEB_CIDR` | Restrict ingress for Terraform security lists |
-| OCI | `OCI_*` secrets + `OCI_COMPARTMENT_ID` | required for IaC + CLI |
-| GitHub | `GITHUB_TOKEN`, `GITHUB_OWNER`, `github_repo` terraform var | used for GHCR + git clone |
+| OCI provisioning | `OCI_USER_OCID`, `OCI_TENANCY_OCID`, `OCI_COMPARTMENT_ID`, `OCI_REGION`, `OCI_FINGERPRINT`, `OCI_PRIVATE_KEY`, `SSH_PUBLIC_KEY` | required for Terraform + cloud-init |
+| Network CIDRs | `ALLOWED_SSH_CIDR`, `ALLOWED_WEB_CIDR` | restrict ingress to your IP(s) |
+| GitHub | `GITHUB_TOKEN`, `GITHUB_OWNER` | token auto-provided by Actions for GHCR login |
 
 Store secrets in GitHub Actions → Settings → Secrets. Local dev can use a `.env` next to `docker-compose.dev.yml`.
 
@@ -104,14 +104,28 @@ Backend    -> http://localhost:8000/docs
 ```
 Volumes land in `infra/docker/dev-data` so uploads persist across restarts.
 
-### 2. Automated CI/CD (Hermes workflow)
+### 2. Automated CI/CD (Terraform)
 1. Fork this repository.
-2. Add the secrets listed above in GitHub → Settings → Secrets → Actions.
+2. Configure secrets (GitHub → Settings → Secrets → Actions):
+   ```
+   OCI_USER_OCID=ocid1.user.oc1..aaaa
+   OCI_TENANCY_OCID=ocid1.tenancy.oc1..aaaa
+   OCI_COMPARTMENT_ID=ocid1.compartment.oc1..aaaa
+   OCI_REGION=us-ashburn-1
+   OCI_FINGERPRINT=aa:bb:cc:dd:...
+   OCI_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
+   SSH_PUBLIC_KEY=ssh-rsa AAAAB3Nza...
+   ALLOWED_SSH_CIDR=YOUR_IP/32
+   ALLOWED_WEB_CIDR=YOUR_IP/32
+
+   # at least one LLM key
+   GROQ_API_KEY=gsk_... / DEEPSEEK_API_KEY=... / OPENAI_API_KEY=... / GEMINI_API_KEY=...
+   ```
 3. Push to `main`. Workflow steps:
-   - **test-backend** – pip install + placeholder tests.
-   - **build-images** – build multi-stage Dockerfile, push `rag-backend` & `rag-frontend` to GHCR.
-   - **deploy** – setup Terraform + OCI CLI, apply infra, run `setup-docker.sh`, wait on `/api/health`.
-4. Output includes the public IP for the SPA, API docs, and health endpoint.
+   - **test-backend** – dependency install + placeholder tests.
+   - **build-images** – build/push backend & frontend images to GHCR.
+   - **deploy** – run Terraform (`infra/terraform`) to provision/update the VCN, security list, and VM; cloud-init runs `infra/scripts/setup-docker.sh`, which pulls the latest images and starts the Compose stack.
+4. The pipeline waits for `http://$INSTANCE_IP/api/health` to return 200 and then prints URLs (frontend, docs, health) in the job summary.
 
 ### 3. Manual Terraform (Optional)
 ```bash
@@ -123,6 +137,8 @@ terraform apply
 terraform output instance_public_ip
 ```
 SSH with the key you configured and use `docker compose -f infra/docker/docker-compose.yml ps` to manage services.
+
+> Need to redeploy without re-running Terraform? SSH into the VM, `git pull`, and run `infra/scripts/deploy-shared.sh` to reapply the Docker Compose stack.
 
 ---
 
@@ -139,6 +155,8 @@ SSH with the key you configured and use `docker compose -f infra/docker/docker-c
 - **Subnet** – /24 public subnet for the VM.
 - **Compute Instance** – default `VM.Standard.E2.1.Micro` (Always Free) or `VM.Standard.A1.Flex` (Ampere). Boot volume size configurable.
 - **Cloud-init script** – installs Docker, clones repo with PAT, logs into GHCR, writes `.env`, runs compose.
+
+> These Terraform manifests are now optional. Use them only when you need to provision a fresh VM; the GitHub Action deploys to an existing shared host via SSH.
 
 Use `deployment_trigger` variable to force redeploy without code changes.
 

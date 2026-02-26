@@ -2,6 +2,9 @@
 
 This guide explains how to deploy your RAG application to Oracle Cloud Infrastructure (OCI) using the same approach as the Hermes project.
 
+> **Shared VM Note (Feb 2026)**  
+> The default pipeline provisions its own infrastructure via Terraform. If you already have a VM and only need to refresh the containers, SSH in and run `infra/scripts/deploy-shared.sh` to apply the Docker Compose stack without touching OCI resources.
+
 ## 📋 Prerequisites
 
 ### 1. OCI Account Setup
@@ -36,17 +39,19 @@ OCI_USER_OCID=ocid1.user.oc1..aaaaa...
 OCI_FINGERPRINT=12:34:56:78:9a:bc:de...
 OCI_TENANCY_OCID=ocid1.tenancy.oc1..aaaaa...
 OCI_REGION=us-ashburn-1
-OCI_PRIVATE_KEY=...
+OCI_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
 OCI_COMPARTMENT_ID=ocid1.compartment.oc1..aaaaa...
 SSH_PUBLIC_KEY=ssh-rsa AAAAB3Nza...
-
-# API Keys (at least one required)
-OPENAI_API_KEY=sk-proj-...  (optional)
-GROQ_API_KEY=gsk_...         (free tier)
 
 # Security (optional, defaults to 0.0.0.0/0)
 ALLOWED_SSH_CIDR=YOUR_IP/32
 ALLOWED_WEB_CIDR=YOUR_IP/32
+
+# LLM providers (set at least one)
+GROQ_API_KEY=gsk_...
+DEEPSEEK_API_KEY=dsk_...
+OPENAI_API_KEY=sk-proj-...
+GEMINI_API_KEY=AIza...
 ```
 
 3. **Push to main branch** → GitHub Actions will automatically:
