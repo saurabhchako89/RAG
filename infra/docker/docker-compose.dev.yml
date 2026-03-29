@@ -1,32 +1,48 @@
-version: '3.9'
-
 services:
   rag-backend:
     build:
       context: ../..
-      dockerfile: ../../Dockerfile
+      dockerfile: Dockerfile
       target: backend
     container_name: rag-backend-dev
     ports:
       - "8000:8000"
     environment:
+      # LLM keys — at least one required (Claude preferred)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+      # Embeddings
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
       - HF_EMBEDDING_MODEL=${HF_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      # OCI Object Storage
+      - OCI_BUCKET_NAME=${OCI_BUCKET_NAME:-}
+      - OCI_NAMESPACE=${OCI_NAMESPACE:-}
+      - OCI_REGION=${OCI_REGION:-us-ashburn-1}
+      - OCI_USE_INSTANCE_PRINCIPAL=${OCI_USE_INSTANCE_PRINCIPAL:-false}
+      # GitHub connector
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPOS=${GITHUB_REPOS:-}
+      # Notion connector
+      - NOTION_TOKEN=${NOTION_TOKEN:-}
+      - NOTION_DATABASE_IDS=${NOTION_DATABASE_IDS:-}
     volumes:
       - ../../backend:/app
       - ../../infra/docker/dev-data/uploads:/app/uploads
       - ../../infra/docker/dev-data/chromadb:/app/data/chromadb
+      - ../../infra/docker/dev-data/repos:/app/data/repos
+      - ../../infra/docker/dev-data/rag.db:/app/data/rag.db
+      - ~/.oci:/root/.oci:ro
     networks:
       - rag-dev
 
   rag-frontend:
     build:
       context: ../..
-      dockerfile: ../../Dockerfile
+      dockerfile: Dockerfile
       target: frontend
     container_name: rag-frontend-dev
     ports:

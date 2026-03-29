@@ -1,203 +1,129 @@
 """
-RAG API Backend - FastAPI
-Production-ready RAG system with PDF + JSON ingestion and query endpoints
+RAG API Backend — FastAPI
+Claude-first, multi-connector, connector-scoped ChromaDB, SQLite state.
 """
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+import logging
 import os
-import json
-import uuid
 import time
-import shutil
 from pathlib import Path
 from typing import Optional
-import logging
 
-# ── LangChain imports ────────────────────────────────────────────────────────
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.schema import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.vectorstores import Chroma
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
 from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_openai import OpenAIEmbeddings
+from pydantic import BaseModel
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Paths ────────────────────────────────────────────────────────────────────
-UPLOAD_DIR = Path("uploads")
-CHROMA_DIR = Path("data/chromadb")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-
-# ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(
-    title="RAG Document Q&A API",
-    description="Production-grade Retrieval-Augmented Generation API",
-    version="1.0.0"
+# ── Local modules ─────────────────────────────────────────────────────────────
+import ingestion.vector_store as vs
+from ingestion.chunker import chunk_documents
+from state.db import (
+    append_chat_turn,
+    get_chat_history,
+    get_sync_states,
+    init_db,
+    insert_document,
+    list_documents,
+    upsert_sync_state,
 )
+import connectors.registry as registry
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],           # tighten in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# ── Shared state ──────────────────────────────────────────────────────────────
-_embeddings = None
-_vector_store: Optional[Chroma] = None
-ingested_docs: list[dict] = []          # simple in-memory registry
+# ── Bootstrap ─────────────────────────────────────────────────────────────────
+init_db()
 
 
 def _embedding_provider() -> str:
     return os.getenv("EMBEDDING_PROVIDER", "openai").lower()
 
 
-def get_embeddings():
-    global _embeddings
-    if _embeddings is None:
-        provider = _embedding_provider()
-        if provider == "huggingface":
-            model_name = os.getenv("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-            _embeddings = HuggingFaceEmbeddings(model_name=model_name)
-        else:
-            openai_key = os.getenv("OPENAI_API_KEY")
-            if not openai_key:
-                raise RuntimeError("OPENAI_API_KEY is required unless EMBEDDING_PROVIDER=huggingface")
-            _embeddings = OpenAIEmbeddings(
-                model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
-                openai_api_key=openai_key
-            )
-    return _embeddings
-
-
-def get_vector_store() -> Chroma:
-    global _vector_store
-    if _vector_store is None:
-        _vector_store = Chroma(
-            persist_directory=str(CHROMA_DIR),
-            embedding_function=get_embeddings()
+def _build_embeddings():
+    provider = _embedding_provider()
+    if provider == "huggingface":
+        return HuggingFaceEmbeddings(
+            model_name=os.getenv("HF_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
         )
-    return _vector_store
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not openai_key:
+        raise RuntimeError("OPENAI_API_KEY required unless EMBEDDING_PROVIDER=huggingface")
+    return OpenAIEmbeddings(
+        model=os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small"),
+        openai_api_key=openai_key,
+    )
+
+
+vs.set_embeddings(_build_embeddings())
 
 
 def get_llm(model: Optional[str] = None, temperature: float = 0.0):
-    requested_model = model
-    if requested_model and requested_model.lower() == "auto":
-        requested_model = None
+    m = None if (not model or model.lower() == "auto") else model
 
-    groq_key = os.getenv("GROQ_API_KEY")
-    deepseek_key = os.getenv("DEEPSEEK_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-    gemini_key = os.getenv("GEMINI_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    groq_key      = os.getenv("GROQ_API_KEY")
+    deepseek_key  = os.getenv("DEEPSEEK_API_KEY")
+    openai_key    = os.getenv("OPENAI_API_KEY")
+    gemini_key    = os.getenv("GEMINI_API_KEY")
 
+    if anthropic_key:
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(
+            model=m or os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+            temperature=temperature,
+            anthropic_api_key=anthropic_key,
+        )
     if groq_key:
-        resolved_model = requested_model or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        from langchain_openai import ChatOpenAI
         return ChatOpenAI(
-            model=resolved_model,
+            model=m or os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
             temperature=temperature,
             openai_api_key=groq_key,
-            openai_api_base=os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1")
+            openai_api_base=os.getenv("GROQ_API_BASE", "https://api.groq.com/openai/v1"),
         )
-
     if deepseek_key:
-        resolved_model = requested_model or os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+        from langchain_openai import ChatOpenAI
         return ChatOpenAI(
-            model=resolved_model,
+            model=m or os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
             temperature=temperature,
             openai_api_key=deepseek_key,
-            openai_api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+            openai_api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
         )
-
     if openai_key:
-        resolved_model = requested_model or os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini")
+        from langchain_openai import ChatOpenAI
         return ChatOpenAI(
-            model=resolved_model,
+            model=m or os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
             temperature=temperature,
-            openai_api_key=openai_key
+            openai_api_key=openai_key,
         )
-
     if gemini_key:
-        resolved_model = requested_model or os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        from langchain_google_genai import ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(
-            model=resolved_model,
+            model=m or os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
             temperature=temperature,
             api_key=gemini_key,
             convert_system_message_to_human=True,
         )
 
-    raise RuntimeError("Set one of GROQ_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY to query the knowledge base.")
+    raise RuntimeError("Set at least one of: ANTHROPIC_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY")
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── App ───────────────────────────────────────────────────────────────────────
+app = FastAPI(title="RAG Document Q&A API", version="2.0.0")
 
-def chunk_and_ingest(docs: list[Document], source_name: str) -> int:
-    """Chunk documents and upsert into ChromaDB. Returns number of chunks."""
-    splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
-        separators=["\n\n", "\n", " ", ""]
-    )
-    chunks = splitter.split_documents(docs)
-    logger.info(f"Ingesting {len(chunks)} chunks from '{source_name}'")
-
-    vs = get_vector_store()
-    vs.add_documents(chunks)
-    vs.persist()
-    return len(chunks)
-
-
-def json_to_documents(data: dict | list, source: str) -> list[Document]:
-    """
-    Flatten a JSON file into LangChain Documents.
-    Each top-level key (or array item) becomes a separate document chunk
-    so the vector store can pinpoint exactly where an answer came from.
-    """
-    docs = []
-
-    def _flatten(obj, prefix="") -> str:
-        if isinstance(obj, dict):
-            return "\n".join(
-                f"{prefix}{k}: {_flatten(v, prefix='  ')}" for k, v in obj.items()
-            )
-        elif isinstance(obj, list):
-            return "\n".join(
-                f"[{i}] {_flatten(item)}" for i, item in enumerate(obj)
-            )
-        else:
-            return str(obj)
-
-    if isinstance(data, list):
-        for i, item in enumerate(data):
-            text = _flatten(item)
-            docs.append(Document(
-                page_content=text,
-                metadata={"source": source, "record_index": i}
-            ))
-    elif isinstance(data, dict):
-        for key, value in data.items():
-            text = f"{key}:\n{_flatten(value)}"
-            docs.append(Document(
-                page_content=text,
-                metadata={"source": source, "section": key}
-            ))
-    else:
-        docs.append(Document(
-            page_content=str(data),
-            metadata={"source": source}
-        ))
-
-    return docs
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -207,6 +133,9 @@ class QueryRequest(BaseModel):
     top_k: int = 5
     model: str = "auto"
     temperature: float = 0.0
+    connector_id: Optional[str] = None   # None = search all collections
+    thread_id: Optional[str] = None
+    hybrid: bool = False
 
 
 class QueryResponse(BaseModel):
@@ -214,157 +143,228 @@ class QueryResponse(BaseModel):
     answer: str
     sources: list[dict]
     latency_ms: float
+    connectors_searched: list[str]
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-@app.get("/")
-def root():
-    return {"message": "RAG API is running", "docs": "/docs"}
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "openai_key_set": bool(os.getenv("OPENAI_API_KEY")),
-        "groq_key_set": bool(os.getenv("GROQ_API_KEY")),
-        "embedding_provider": _embedding_provider(),
-        "documents_ingested": len(ingested_docs),
-    }
+def _format_docs(docs) -> str:
+    return "\n\n".join(
+        f"[connector={d.metadata.get('connector','?')} source={d.metadata.get('source','?')} "
+        f"page/record={d.metadata.get('page', d.metadata.get('record_index', d.metadata.get('section', 'N/A')))}]\n"
+        f"{d.page_content}"
+        for d in docs
+    )
 
 
-@app.get("/documents")
-def list_documents():
-    """List all ingested documents."""
-    return {"documents": ingested_docs}
-
-
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
-    """
-    Upload and ingest a PDF or JSON file.
-    Returns chunk count and document metadata.
-    """
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in (".pdf", ".json"):
-        raise HTTPException(status_code=400, detail="Only PDF and JSON files are supported.")
-
-    # Save to disk
-    file_id = str(uuid.uuid4())[:8]
-    save_path = UPLOAD_DIR / f"{file_id}_{file.filename}"
-    with open(save_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-
-    logger.info(f"Saved upload: {save_path}")
-
-    try:
-        if suffix == ".pdf":
-            loader = PyPDFLoader(str(save_path))
-            docs = loader.load()
-
-        elif suffix == ".json":
-            with open(save_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            docs = json_to_documents(data, source=file.filename)
-
-        chunk_count = chunk_and_ingest(docs, source=file.filename)
-
-        record = {
-            "id": file_id,
-            "filename": file.filename,
-            "type": suffix.lstrip("."),
-            "pages_or_records": len(docs),
-            "chunks": chunk_count,
-        }
-        ingested_docs.append(record)
-
-        return {"message": "File ingested successfully", **record}
-
-    except Exception as e:
-        logger.error(f"Ingestion error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/query", response_model=QueryResponse)
-def query(req: QueryRequest):
-    """
-    Query the knowledge base. Returns an LLM-generated answer
-    grounded in retrieved document chunks, plus source citations.
-    """
-    t0 = time.time()
-
-    vs = get_vector_store()
-    retriever = vs.as_retriever(search_kwargs={"k": req.top_k})
-
-    # Retrieve source docs for citation display
-    source_docs = retriever.invoke(req.question)
-
-    # Build prompt
-    prompt = ChatPromptTemplate.from_template(
-        """You are a helpful assistant that answers questions based strictly on the provided context.
+RAG_PROMPT = ChatPromptTemplate.from_template(
+    """You are a helpful assistant. Answer using ONLY the provided context.
 If the answer is not in the context, say "I couldn't find this in the provided documents."
-Always cite which document and section/page the information came from.
+Cite the connector and source for each fact.
 
-Context:
+{history}Context:
 {context}
 
 Question: {question}
 
 Answer (with citations):"""
-    )
+)
 
-    def format_docs(docs):
-        return "\n\n".join(
-            f"[Source: {d.metadata.get('source','?')}, "
-            f"Page/Record: {d.metadata.get('page', d.metadata.get('record_index', d.metadata.get('section', 'N/A')))}]\n"
-            f"{d.page_content}"
-            for d in docs
-        )
+
+def _run_query(req: QueryRequest) -> QueryResponse:
+    t0 = time.time()
+
+    # Retrieve
+    if req.connector_id:
+        docs = vs.query_collection(req.question, req.connector_id, req.top_k)
+        searched = [req.connector_id]
+    else:
+        docs = vs.query_all(req.question, req.top_k)
+        searched = list({d.metadata.get("connector", "unknown") for d in docs})
+
+    # Chat history
+    history_text = ""
+    if req.thread_id:
+        turns = get_chat_history(req.thread_id)
+        if turns:
+            history_text = "Previous conversation:\n" + "\n".join(
+                f"{t['role'].capitalize()}: {t['content']}" for t in turns
+            ) + "\n\n"
 
     try:
         llm = get_llm(model=req.model, temperature=req.temperature)
-    except RuntimeError as err:
-        raise HTTPException(status_code=500, detail=str(err)) from err
-    rag_chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-    try:
-        answer = rag_chain.invoke(req.question)
-    except Exception as e:
-        logger.error(f"LLM error: {e}")
+    except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    latency_ms = round((time.time() - t0) * 1000, 1)
+    chain = RAG_PROMPT | llm | StrOutputParser()
+    try:
+        answer = chain.invoke({
+            "context":  _format_docs(docs),
+            "question": req.question,
+            "history":  history_text,
+        })
+    except Exception as e:
+        logger.error("LLM error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Persist chat turn
+    if req.thread_id:
+        turns = get_chat_history(req.thread_id)
+        turn_n = len(turns)
+        append_chat_turn(req.thread_id, turn_n,     "user",      req.question)
+        append_chat_turn(req.thread_id, turn_n + 1, "assistant", answer)
 
     sources = [
         {
-            "source": d.metadata.get("source", "Unknown"),
-            "page": d.metadata.get("page", d.metadata.get("record_index", d.metadata.get("section", "N/A"))),
-            "preview": d.page_content[:300],
+            "connector": d.metadata.get("connector", "unknown"),
+            "source":    d.metadata.get("source", "Unknown"),
+            "page":      d.metadata.get("page", d.metadata.get("record_index", d.metadata.get("section", "N/A"))),
+            "preview":   d.page_content[:300],
         }
-        for d in source_docs
+        for d in docs
     ]
 
     return QueryResponse(
         question=req.question,
         answer=answer,
         sources=sources,
-        latency_ms=latency_ms,
+        latency_ms=round((time.time() - t0) * 1000, 1),
+        connectors_searched=searched,
     )
 
 
+# ── Routes ────────────────────────────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    return {"message": "RAG API v2 running", "docs": "/docs"}
+
+
+@app.get("/health")
+def health():
+    active_llm = (
+        "claude"   if os.getenv("ANTHROPIC_API_KEY") else
+        "groq"     if os.getenv("GROQ_API_KEY")      else
+        "deepseek" if os.getenv("DEEPSEEK_API_KEY")  else
+        "openai"   if os.getenv("OPENAI_API_KEY")    else
+        "gemini"   if os.getenv("GEMINI_API_KEY")    else
+        "none"
+    )
+    return {
+        "status":             "ok",
+        "embedding_provider": _embedding_provider(),
+        "active_llm":         active_llm,
+        "storage":            "oci" if os.getenv("OCI_BUCKET_NAME") else "local",
+        "connectors":         registry.health_all(),
+    }
+
+
+@app.get("/documents")
+def get_documents(connector_id: Optional[str] = None):
+    return {"documents": list_documents(connector_id)}
+
+
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    raw_bytes = await file.read()
+    connector = registry.get("files")
+    try:
+        docs, record = connector.ingest(file.filename, raw_bytes)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Upload error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    chunks      = chunk_documents(docs)
+    chunk_count = vs.add_documents(chunks, "files")
+    record["chunks"] = chunk_count
+    insert_document(record)
+    upsert_sync_state("files", "ok", len(list_documents("files")))
+
+    return {"message": "File ingested successfully", **record}
+
+
+@app.post("/query", response_model=QueryResponse)
+def query(req: QueryRequest):
+    return _run_query(req)
+
+
+@app.post("/query/hybrid", response_model=QueryResponse)
+def query_hybrid(req: QueryRequest):
+    base = _run_query(req)
+
+    # Gather live snippets from GitHub sources
+    github_sources = [s for s in base.sources if s.get("connector") == "github"]
+    if not github_sources:
+        return base
+
+    live_parts = []
+    repo_dir = Path("data/repos")
+    for src in github_sources[:2]:
+        repo_slug = src["source"].replace("/", "_")
+        file_path = repo_dir / repo_slug / src.get("page", "")
+        if file_path.is_file():
+            live_parts.append(f"[live: {src['source']}/{src.get('page','')}]\n{file_path.read_text(errors='ignore')[:2000]}")
+
+    if not live_parts:
+        return base
+
+    try:
+        llm = get_llm(model=req.model, temperature=req.temperature)
+        supplement_prompt = (
+            f"Base answer:\n{base.answer}\n\n"
+            f"Live context:\n{''.join(live_parts)}\n\n"
+            "Provide ONLY information from the live context that adds to or corrects the base answer. "
+            "If nothing to add, respond with exactly: NO_SUPPLEMENT"
+        )
+        supplement = llm.invoke(supplement_prompt).content
+        if "NO_SUPPLEMENT" not in supplement:
+            base.answer += f"\n\n---\n**Live update:**\n{supplement}"
+    except Exception as e:
+        logger.warning("Hybrid supplement failed: %s", e)
+
+    return base
+
+
+@app.get("/chat/history/{thread_id}")
+def chat_history(thread_id: str, last_n: int = 20):
+    return {"thread_id": thread_id, "history": get_chat_history(thread_id, last_n)}
+
+
+@app.get("/sync/connectors")
+def sync_status():
+    states = {s["connector_id"]: s for s in get_sync_states()}
+    return {
+        "connectors": [
+            {**h, **(states.get(h["id"]) or {})}
+            for h in registry.health_all()
+        ]
+    }
+
+
+@app.post("/sync/connectors/{connector_id}/refresh")
+def sync_connector(connector_id: str):
+    if connector_id not in ("github", "wiki"):
+        raise HTTPException(status_code=400, detail="Only github and wiki connectors support refresh.")
+
+    conn = registry.get(connector_id)
+    try:
+        docs    = conn.refresh()
+        chunks  = chunk_documents(docs)
+        count   = vs.add_documents(chunks, connector_id)
+        upsert_sync_state(connector_id, "ok", len(list_documents(connector_id)))
+        return {"connector_id": connector_id, "docs_processed": len(docs), "chunks_added": count}
+    except Exception as e:
+        upsert_sync_state(connector_id, "error", 0)
+        logger.error("Sync error [%s]: %s", connector_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/reset")
-def reset_knowledge_base():
-    """Clear the entire vector store and document registry."""
-    global _vector_store, ingested_docs
-    if CHROMA_DIR.exists():
-        shutil.rmtree(CHROMA_DIR)
-    CHROMA_DIR.mkdir(parents=True)
-    _vector_store = None
-    ingested_docs = []
-    return {"message": "Knowledge base reset successfully."}
+def reset(connector_id: Optional[str] = None):
+    if connector_id:
+        vs.reset_collection(connector_id)
+        return {"message": f"Collection '{connector_id}' reset."}
+    vs.reset_all()
+    return {"message": "All collections reset."}

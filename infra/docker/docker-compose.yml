@@ -7,13 +7,26 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - GROQ_API_KEY=${GROQ_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - HF_EMBEDDING_MODEL=${HF_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      - OCI_BUCKET_NAME=${OCI_BUCKET_NAME:-}
+      - OCI_NAMESPACE=${OCI_NAMESPACE:-}
+      - OCI_REGION=${OCI_REGION:-us-ashburn-1}
+      - OCI_USE_INSTANCE_PRINCIPAL=${OCI_USE_INSTANCE_PRINCIPAL:-true}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_REPOS=${GITHUB_REPOS:-}
+      - NOTION_TOKEN=${NOTION_TOKEN:-}
+      - NOTION_DATABASE_IDS=${NOTION_DATABASE_IDS:-}
     volumes:
       - rag-uploads:/app/uploads
       - rag-chromadb:/app/data/chromadb
+      - rag-repos:/app/data/repos
+      - rag-db:/app/data/rag.db
     networks:
       - rag-network
     healthcheck:
@@ -49,3 +62,5 @@ networks:
 volumes:
   rag-uploads:
   rag-chromadb:
+  rag-repos:
+  rag-db:

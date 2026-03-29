@@ -149,9 +149,10 @@
     .upload-status.error   { background: rgba(224,95,95,0.1);  color: var(--error);   border: 1px solid rgba(224,95,95,0.2); }
 
     .doc-list {
-      flex: 1;
       overflow-y: auto;
+      max-height: calc(5 * 58px);
       padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
     }
 
     .doc-item {
@@ -192,11 +193,151 @@
       font-size: 10px;
       color: var(--muted);
       margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .connector-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-family: var(--mono);
+      font-size: 10px;
+      text-transform: lowercase;
+      border: 1px solid transparent;
+      line-height: 1.2;
+    }
+
+    .connector-badge.files {
+      background: rgba(76,175,130,0.14);
+      border-color: rgba(76,175,130,0.28);
+      color: #8fe2b7;
+    }
+
+    .connector-badge.github {
+      background: rgba(91,138,240,0.16);
+      border-color: rgba(91,138,240,0.32);
+      color: #adc5ff;
+    }
+
+    .connector-badge.wiki {
+      background: rgba(232,201,122,0.16);
+      border-color: rgba(232,201,122,0.34);
+      color: #f2dca7;
+    }
+
+    .connector-badge.unknown {
+      background: rgba(90,98,112,0.2);
+      border-color: rgba(90,98,112,0.35);
+      color: var(--muted);
+    }
+
+    .connectors-list {
+      padding: 12px 18px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .connector-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .connector-row:last-child {
+      border-bottom: none;
+    }
+
+    .connector-main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .connector-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.02);
+      flex-shrink: 0;
+    }
+
+    .status-dot.green {
+      background: var(--success);
+    }
+
+    .status-dot.yellow {
+      background: var(--accent);
+    }
+
+    .status-dot.grey {
+      background: var(--muted);
+    }
+
+    .connector-meta {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sync-btn {
+      border: 1px solid var(--border2);
+      background: var(--dim);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 10px;
+      border-radius: 6px;
+      padding: 5px 8px;
+      cursor: pointer;
+      min-width: 62px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: all 0.15s;
+    }
+
+    .sync-btn:hover:not(:disabled) {
+      border-color: var(--accent2);
+      color: var(--accent2);
+    }
+
+    .sync-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .sync-unavailable {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+      border: 1px dashed var(--border2);
+      border-radius: 6px;
+      padding: 5px 8px;
+      min-width: 62px;
+      text-align: center;
     }
 
     .settings-section {
       padding: 16px 18px;
-      border-top: 1px solid var(--border);
       margin-top: auto;
     }
 
@@ -428,6 +569,20 @@
       margin-top: 5px;
     }
 
+    .connectors-searched {
+      margin-top: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .connectors-searched-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
     .latency-dot {
       width: 6px; height: 6px;
       border-radius: 50%;
@@ -500,6 +655,24 @@
 
     .send-icon { color: var(--bg); font-size: 16px; }
 
+    .hybrid-toggle {
+      border: 1px solid var(--border2);
+      background: var(--dim);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .hybrid-toggle.on {
+      border-color: rgba(76,175,130,0.45);
+      color: #8fe2b7;
+      background: rgba(76,175,130,0.15);
+    }
+
     @keyframes slideUp {
       from { opacity: 0; transform: translateY(10px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -538,9 +711,35 @@ const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:8000' 
   : '/api';
 
+const THREAD_STORAGE_KEY = 'rag.thread_id';
+
 const fmt = (ms) => ms < 1000 ? `${ms}ms` : `${(ms/1000).toFixed(1)}s`;
 const now = () => new Date().toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' });
 const ext = (name) => (name.split('.').pop() || '').toLowerCase();
+const connectorClass = (name) => {
+  const key = String(name || '').toLowerCase();
+  return ['files', 'github', 'wiki'].includes(key) ? key : 'unknown';
+};
+const getOrCreateThreadId = () => {
+  const existing = localStorage.getItem(THREAD_STORAGE_KEY);
+  if (existing) return existing;
+  const created = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `thread_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  localStorage.setItem(THREAD_STORAGE_KEY, created);
+  return created;
+};
+const fmtLastSynced = (raw) => {
+  if (!raw) return 'Never';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return 'Never';
+  return d.toLocaleString('en-US', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+};
+
+function ConnectorBadge({ connector }) {
+  const c = connectorClass(connector);
+  return <span className={`connector-badge ${c}`}>{c}</span>;
+}
 
 function SourcesAccordion({ sources }) {
   const [open, setOpen] = useState(false);
@@ -558,6 +757,7 @@ function SourcesAccordion({ sources }) {
               <div className="source-header">
                 <span className="source-name">📄 {s.source}</span>
                 <span className="source-page">p.{s.page ?? 'N/A'}</span>
+                <ConnectorBadge connector={s.connector} />
               </div>
               <div className="source-preview">{s.preview}</div>
             </div>
@@ -577,8 +777,38 @@ function DocItem({ doc }) {
       </div>
       <div className="doc-info">
         <div className="doc-name" title={doc.filename}>{doc.filename}</div>
-        <div className="doc-meta">{doc.chunks} chunks · {doc.pages_or_records} {type === 'pdf' ? 'pages' : 'records'}</div>
+        <div className="doc-meta">
+          <span>{doc.chunks} chunks · {doc.pages_or_records} {type === 'pdf' ? 'pages' : 'records'}</span>
+          <ConnectorBadge connector={doc.connector_id} />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function ConnectorRow({ connector, syncing, onSync }) {
+  const status = connector.status || 'not_configured';
+  const statusClass = status === 'ok' ? 'green' : (status === 'not_configured' ? 'grey' : 'yellow');
+  const canSync = connector.id !== 'files';
+
+  return (
+    <div className="connector-row">
+      <div className="connector-main">
+        <div className="connector-title">
+          <span className={`status-dot ${statusClass}`} />
+          <span>{connector.label || connector.id}</span>
+        </div>
+        <div className="connector-meta">
+          Last synced: {fmtLastSynced(connector.last_synced)} · {connector.doc_count || 0} docs
+        </div>
+      </div>
+      {canSync ? (
+        <button className="sync-btn" disabled={syncing} onClick={() => onSync(connector.id)}>
+          {syncing ? <span className="spin">↻</span> : 'Sync'}
+        </button>
+      ) : (
+        <span className="sync-unavailable">Auto</span>
+      )}
     </div>
   );
 }
@@ -586,13 +816,17 @@ function DocItem({ doc }) {
 function App() {
   const [messages, setMessages] = useState([]);
   const [docs, setDocs] = useState([]);
+  const [connectors, setConnectors] = useState([]);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hybrid, setHybrid] = useState(false);
   const [topK, setTopK] = useState(5);
   const [temperature, setTemperature] = useState(0);
-  const [model, setModel] = useState('gpt-4');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [threadId] = useState(getOrCreateThreadId);
+  const [syncingConnector, setSyncingConnector] = useState(null);
+  const [activeLlm, setActiveLlm] = useState(null);
 
   const messagesRef = useRef(null);
   const inputRef = useRef(null);
@@ -603,6 +837,52 @@ function App() {
       messagesRef.current.scrollTop = messagesRef.current.scrollHeight;
     }
   }, [messages, loading]);
+
+  const loadDocuments = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/documents`);
+      const data = await res.json();
+      if (res.ok) setDocs(data.documents || []);
+    } catch {
+      setDocs([]);
+    }
+  }, []);
+
+  const loadConnectors = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/sync/connectors`);
+      const data = await res.json();
+      if (res.ok) setConnectors(data.connectors || []);
+    } catch {
+      setConnectors([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const bootstrap = async () => {
+      try {
+        const [healthRes, docsRes, connectorsRes] = await Promise.all([
+          fetch(`${API_BASE}/health`),
+          fetch(`${API_BASE}/documents`),
+          fetch(`${API_BASE}/sync/connectors`),
+        ]);
+
+        const [healthData, docsData, connectorsData] = await Promise.all([
+          healthRes.json(),
+          docsRes.json(),
+          connectorsRes.json(),
+        ]);
+
+        if (healthRes.ok) setActiveLlm(healthData.active_llm);
+        if (docsRes.ok) setDocs(docsData.documents || []);
+        if (connectorsRes.ok) setConnectors(connectorsData.connectors || []);
+      } catch {
+        // Keep UI interactive even if bootstrap calls fail.
+      }
+    };
+
+    bootstrap();
+  }, []);
 
   const handleUpload = useCallback(async (file) => {
     if (!file) return;
@@ -622,20 +902,41 @@ function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Upload failed');
 
-      setDocs(prev => [...prev, data]);
+      await Promise.all([loadDocuments(), loadConnectors()]);
       setUploadStatus({ kind: 'success', text: `✓ ${data.filename} · ${data.chunks} chunks indexed` });
       setTimeout(() => setUploadStatus(null), 4000);
     } catch (e) {
       setUploadStatus({ kind: 'error', text: e.message });
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
     }
-  }, []);
+  }, [loadConnectors, loadDocuments]);
 
-  const onFileChange = (e) => handleUpload(e.target.files[0]);
+  const onFileChange = (e) => {
+    handleUpload(e.target.files[0]);
+    e.target.value = '';
+  };
 
   const onDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
     handleUpload(e.dataTransfer.files[0]);
+  };
+
+  const refreshConnector = async (connectorId) => {
+    if (connectorId === 'files') return;
+    setSyncingConnector(connectorId);
+    try {
+      const res = await fetch(`${API_BASE}/sync/connectors/${connectorId}/refresh`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Sync failed');
+      await Promise.all([loadConnectors(), loadDocuments()]);
+    } catch (e) {
+      setUploadStatus({ kind: 'error', text: `Sync failed (${connectorId}): ${e.message}` });
+      setTimeout(() => setUploadStatus(null), 4000);
+    } finally {
+      setSyncingConnector(null);
+    }
   };
 
   const sendQuery = async () => {
@@ -648,10 +949,11 @@ function App() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/query`, {
+      const endpoint = hybrid ? '/query/hybrid' : '/query';
+      const res = await fetch(`${API_BASE}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, top_k: topK, temperature, model }),
+        body: JSON.stringify({ question: q, top_k: topK, temperature, thread_id: threadId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Query failed');
@@ -661,6 +963,7 @@ function App() {
         text: data.answer,
         sources: data.sources,
         latency: data.latency_ms,
+        connectorsSearched: data.connectors_searched || [],
         time: now(),
       };
       setMessages(prev => [...prev, assistantMsg]);
@@ -687,6 +990,11 @@ function App() {
     <div className="shell">
       <header className="topbar">
         <div className="logo">RAG <span>·</span> Document Intelligence</div>
+        {activeLlm && activeLlm !== 'none' && (
+          <div style={{fontFamily:'var(--mono)', fontSize:11, color:'var(--muted)', border:'1px solid var(--border2)', padding:'3px 10px', borderRadius:6}}>
+            {activeLlm}
+          </div>
+        )}
       </header>
 
       <aside className="sidebar">
@@ -724,25 +1032,50 @@ function App() {
           )}
         </div>
 
+        <div className="connectors-list">
+          <div className="section-title" style={{marginBottom:10}}>🔌 Connectors</div>
+          {connectors.length === 0 ? (
+            <div style={{fontSize:12, color:'var(--muted)', textAlign:'center', padding:'10px 0 14px'}}>
+              No connectors found.
+            </div>
+          ) : (
+            connectors.map((c) => (
+              <ConnectorRow
+                key={c.id}
+                connector={c}
+                syncing={syncingConnector === c.id}
+                onSync={refreshConnector}
+              />
+            ))
+          )}
+        </div>
+
         <div className="settings-section">
           <div className="section-title" style={{marginBottom:10}}>⚙ Settings</div>
 
           <div className="setting-row">
-            <span className="setting-label">Model</span>
-            <select value={model} onChange={e => setModel(e.target.value)}>
-              <option value="gpt-4">GPT-4</option>
-              <option value="gpt-3.5-turbo">GPT-3.5</option>
+            <span className="setting-label">Top-K chunks</span>
+            <select value={topK} onChange={e => setTopK(Number(e.target.value))}>
+              {[3,5,8,10].map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
 
           <div className="setting-row">
-            <span className="setting-label">Top-K</span>
-            <span className="setting-val">{topK}</span>
+            <span className="setting-label">Temperature</span>
+            <select value={temperature} onChange={e => setTemperature(Number(e.target.value))}>
+              {[0, 0.3, 0.5, 0.7, 1.0].map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
           </div>
 
-          <div className="setting-row">
-            <span className="setting-label">Temp</span>
-            <span className="setting-val">{temperature}</span>
+          <div className="setting-row" style={{marginBottom:0}}>
+            <span className="setting-label">Hybrid mode</span>
+            <button
+              className={`hybrid-toggle ${hybrid ? 'on' : ''}`}
+              onClick={() => setHybrid(v => !v)}
+              type="button"
+            >
+              {hybrid ? 'ON' : 'OFF'}
+            </button>
           </div>
         </div>
       </aside>
@@ -781,6 +1114,12 @@ function App() {
                       <div className="latency">
                         <div className="latency-dot" />
                         {fmt(m.latency)}
+                      </div>
+                    )}
+                    {m.connectorsSearched?.length > 0 && (
+                      <div className="connectors-searched">
+                        <span className="connectors-searched-label">searched</span>
+                        {m.connectorsSearched.map((c, idx) => <ConnectorBadge key={`${c}-${idx}`} connector={c} />)}
                       </div>
                     )}
                     <SourcesAccordion sources={m.sources} />

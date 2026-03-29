@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./
 
-RUN mkdir -p uploads data/chromadb
+RUN mkdir -p uploads data/chromadb data/repos data/
 
 EXPOSE 8000
 

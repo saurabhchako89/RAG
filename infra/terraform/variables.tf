@@ -54,22 +54,52 @@ variable "openai_api_key" {
   description = "Optional OpenAI API key"
   type        = string
   default     = ""
+  sensitive   = true
+}
+
+variable "anthropic_api_key" {
+  description = "Optional Anthropic (Claude) API key"
+  type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "groq_api_key" {
   description = "Optional Groq API key"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "gemini_api_key" {
   description = "Optional Google Gemini API key"
   type        = string
   default     = ""
+  sensitive   = true
 }
 
 variable "deepseek_api_key" {
   description = "Optional DeepSeek API key"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "github_repos" {
+  description = "Comma-separated list of owner/repo to sync (GitHub connector)"
+  type        = string
+  default     = ""
+}
+
+variable "notion_token" {
+  description = "Optional Notion integration token"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "notion_database_ids" {
+  description = "Comma-separated Notion database IDs to sync"
   type        = string
   default     = ""
 }
@@ -102,4 +132,16 @@ variable "deployment_trigger" {
   description = "Increment to force reprovision"
   type        = number
   default     = 1
+}
+
+variable "oci_bucket_name" {
+  description = "OCI Object Storage bucket name for document uploads"
+  type        = string
+  default     = ""
+}
+
+variable "oci_namespace" {
+  description = "OCI Object Storage namespace (tenancy namespace)"
+  type        = string
+  default     = ""
 }

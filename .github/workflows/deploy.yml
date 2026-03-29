@@ -170,12 +170,18 @@ jobs:
         TF_VAR_github_token: ${{ secrets.GITHUB_TOKEN }}
         TF_VAR_github_owner: ${{ github.repository_owner }}
         TF_VAR_github_repo: ${{ github.event.repository.name }}
+        TF_VAR_github_repos: ${{ secrets.GITHUB_REPOS }}
+        TF_VAR_anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
         TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
         TF_VAR_groq_api_key: ${{ secrets.GROQ_API_KEY }}
         TF_VAR_gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
         TF_VAR_deepseek_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
+        TF_VAR_notion_token: ${{ secrets.NOTION_TOKEN }}
+        TF_VAR_notion_database_ids: ${{ secrets.NOTION_DATABASE_IDS }}
         TF_VAR_allowed_ssh_cidr: ${{ secrets.ALLOWED_SSH_CIDR || '0.0.0.0/0' }}
         TF_VAR_allowed_web_cidr: ${{ secrets.ALLOWED_WEB_CIDR || '0.0.0.0/0' }}
+        TF_VAR_oci_bucket_name: ${{ secrets.OCI_BUCKET_NAME }}
+        TF_VAR_oci_namespace: ${{ secrets.OCI_NAMESPACE }}
       run: |
         export PATH="$HOME/bin:$PATH"
 
